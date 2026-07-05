@@ -1,10 +1,9 @@
-version: '3.8'
-
 services:
   firstdeploy-editor:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
     container_name: firstdeploy-editor
     ports:
       - "3100:3000"
