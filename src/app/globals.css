@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+:root {
+  --background: #09090B;
+  --foreground: #FFFFFF;
+  --panel-bg: #111113;
+  --card-bg: #17171B;
+  --border-color: rgba(255, 255, 255, 0.06);
+  --primary: #7C3AED;
+  --accent: #8B5CF6;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --text: #FFFFFF;
+  --text-secondary: #A1A1AA;
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel-bg);
+  --color-card: var(--card-bg);
+  --color-border: var(--border-color);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-text-secondary: var(--text-secondary);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(17, 17, 19, 0.8);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-card {
+  background: rgba(23, 23, 27, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Monaco overrides */
+.monaco-editor,
+.monaco-editor .margin {
+  background-color: transparent !important;
+}
+
+.monaco-editor .minimap {
+  opacity: 0.7;
+}
+
+.monaco-editor .minimap:hover {
+  opacity: 1;
+}
+
+/* Terminal custom styles */
+.xterm {
+  padding: 12px;
+  height: 100%;
+}
+
+.xterm-viewport {
+  background-color: transparent !important;
+  overflow-y: auto !important;
+}
+
+.xterm-screen {
+  font-family: "Fira Code", JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+
+/* Utility Animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(124, 58, 237, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(124, 58, 237, 0.7);
+  }
+}
+
+.glow-active {
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+/* Tab animations and active states */
+.tab-active {
+  background: rgba(124, 58, 237, 0.15);
+  border-bottom: 2px solid #8B5CF6;
+  color: #FFFFFF;
+}
+
+/* Selectable overlays */
+.tree-node-hover:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tree-node-selected {
+  background: rgba(124, 58, 237, 0.08);
+  color: #FFFFFF;
+  border-left: 2px solid #8B5CF6;
+}
+
+/* Shimmer Loading Effect */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: loading-shimmer 1.5s infinite;
+}
+
+@keyframes loading-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

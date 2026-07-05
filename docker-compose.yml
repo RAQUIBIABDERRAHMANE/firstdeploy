@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  firstdeploy-editor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: firstdeploy-editor
+    ports:
+      - "3100:3000"
+    environment:
+      - PORT=3000
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    volumes:
+      # Mount parent folder to /home/projects inside the container,
+      # allowing the editor to manage project files directly in the mounted workspace.
+      - ./..:/home/projects
+    restart: always
