@@ -648,7 +648,7 @@ What would you like to build or check in the project today?`;
   });
 
   // Serve Next.js Pages
-  expressApp.all('*', (req, res) => {
+  expressApp.all('(.*)', (req, res) => {
     return handle(req, res);
   });
 
