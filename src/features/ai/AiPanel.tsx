@@ -162,89 +162,212 @@ export default function AiPanel() {
     updateLastChatMessage('', false);
   };
 
-  // Simulated Agent Task sequence
+  // Live Autonomous AI Agent Loop
   const runAgentWorkflow = async (userGoal: string, assistantMsgId: string) => {
     clearAgentTasks();
-    
-    const tasks: Omit<AiAgentTask, 'status'>[] = [
-      { id: '1', type: 'plan', description: 'Analyze codebase workspace context' },
-      { id: '2', type: 'read', description: 'Inspect imports in current files' },
-      { id: '3', type: 'search', description: `Search queries relating to: "${userGoal.slice(0, 30)}..."` },
-      { id: '4', type: 'write', description: 'Plan structural updates and compile code modifications' },
-      { id: '5', type: 'command', description: 'Build and validate compiler checks' }
+    setAiGenerating(true);
+
+    const AGENT_SYSTEM_PROMPT = `You are a helpful software engineering agent with full access to the user's workspace.
+You can read files, write files, create files, delete files, search, and run command line utilities.
+To take an action, output an action XML block. You can perform multiple actions if needed.
+Format actions EXACTLY like this:
+
+<action type="read_file" path="src/index.ts"></action>
+<action type="write_file" path="src/utils.ts">
+export const add = (a: number, b: number) => a + b;
+</action>
+<action type="list_dir" path="src"></action>
+<action type="delete_file" path="src/old.ts"></action>
+<action type="run_command" command="npm run build"></action>
+<action type="search_project" query="export const"></action>
+
+When you output an action block, the system will execute it and return the result. Then you can continue with the next action or write a final reply.
+Ensure the file paths are relative to the workspace.
+IMPORTANT: You MUST write files using the <action type="write_file"> tag if you want to modify files. Do not just output code blocks; write them!
+Always respond to the user goals directly.`;
+
+    let activeHistory: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
+      { role: 'system', content: AGENT_SYSTEM_PROMPT },
+      { role: 'user', content: userGoal }
     ];
 
-    // Load tasks into timeline
-    tasks.forEach(t => addAgentTask({ ...t, status: 'pending' }));
+    let loopCount = 0;
+    const maxLoops = 6;
+    let accumulatedContent = '';
 
-    // Execute steps sequentially
-    for (let i = 0; i < tasks.length; i++) {
-      const task = tasks[i];
-      updateAgentTaskStatus(task.id, 'running');
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulated processing delay
+    const resolvePath = (p: string) => {
+      if (!workspacePath) return p;
+      const cleanPath = p.replace(/\\/g, '/');
+      const cleanWorkspace = workspacePath.replace(/\\/g, '/');
+      return cleanPath.startsWith(cleanWorkspace) || cleanPath.startsWith('/') || cleanPath.includes(':') 
+        ? cleanPath 
+        : `${cleanWorkspace}/${cleanPath}`;
+    };
+
+    while (loopCount < maxLoops) {
+      loopCount++;
+      accumulatedContent = '';
       
-      let output = '';
-      if (task.type === 'plan') {
-        output = 'Workspace paths resolved. Found 12 node modules and 4 source modules.';
-      } else if (task.type === 'read') {
-        output = 'Read index file successfully. Resolved client components.';
-      } else if (task.type === 'search') {
-        output = 'Scan finished. Matches found in 2 files.';
-      } else if (task.type === 'write') {
-        output = 'Constructed inline code diffs.';
-      } else if (task.type === 'command') {
-        output = 'Compiler check: OK (Exit Code 0). All changes matched successfully.';
-      }
-      
-      updateAgentTaskStatus(task.id, 'completed', output);
-    }
+      try {
+        const response = await fetch('/api/ai/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: activeHistory,
+            systemPrompt: AGENT_SYSTEM_PROMPT,
+            customApiKey: settings.apiKey,
+            model: settings.aiModel
+          })
+        });
 
-    // Call chat endpoint to get realistic written summary
-    try {
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: `Write a short summary confirming that the agent completed the task: ${userGoal}` }],
-          model: settings.aiModel,
-          customApiKey: settings.apiKey
-        })
-      });
-      
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+        if (!response.ok) {
+          throw new Error('Failed to fetch chat completions');
+        }
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          for (const line of lines) {
-            const cleanLine = line.trim();
-            if (cleanLine.startsWith('data:')) {
-              const dataText = cleanLine.slice(5).trim();
-              if (dataText === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(dataText);
-                if (parsed.text) {
-                  updateLastChatMessage(parsed.text, true);
-                }
-              } catch (e) {}
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const cleanLine = line.trim();
+              if (cleanLine.startsWith('data:')) {
+                const dataText = cleanLine.slice(5).trim();
+                if (dataText === '[DONE]') continue;
+                try {
+                  const parsed = JSON.parse(dataText);
+                  if (parsed.text) {
+                    accumulatedContent += parsed.text;
+                    updateLastChatMessage(parsed.text, true);
+                  }
+                } catch (e) {}
+              }
             }
           }
         }
+        
+        // Finalize current assistant stream render
+        updateLastChatMessage('', false);
+
+        // Find XML actions in the accumulated response
+        const actionRegex = /<action\s+type="([^"]+)"(?:\s+path="([^"]+)")?(?:\s+command="([^"]+)")?(?:\s+query="([^"]+)")?>([\s\S]*?)<\/action>/g;
+        const actions = [];
+        let match;
+        
+        while ((match = actionRegex.exec(accumulatedContent)) !== null) {
+          actions.push({
+            raw: match[0],
+            type: match[1],
+            path: match[2] || '',
+            command: match[3] || '',
+            query: match[4] || '',
+            content: match[5] || ''
+          });
+        }
+
+        // If no actions are requested, the agent is finished!
+        if (actions.length === 0) {
+          break;
+        }
+
+        // Add the agent's output response to history
+        activeHistory.push({ role: 'assistant', content: accumulatedContent });
+
+        // Process all detected actions
+        const results = [];
+        for (const action of actions) {
+          const taskId = Math.random().toString();
+          
+          // Add tasks visually to the timeline
+          addAgentTask({
+            id: taskId,
+            type: action.type as any,
+            description: `Executing ${action.type}: ${action.path || action.command || action.query}`,
+            status: 'running'
+          });
+
+          let outcome = '';
+          try {
+            if (action.type === 'read_file') {
+              const res = await fetch(`/api/workspace/file?path=${encodeURIComponent(resolvePath(action.path))}`);
+              if (!res.ok) throw new Error(await res.text());
+              const data = await res.json();
+              outcome = `File read successfully. Contents:\n${data.content}`;
+            } else if (action.type === 'write_file') {
+              const res = await fetch('/api/workspace/file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: resolvePath(action.path), content: action.content })
+              });
+              if (!res.ok) throw new Error(await res.text());
+              outcome = `File written successfully to ${action.path}`;
+            } else if (action.type === 'list_dir') {
+              const res = await fetch(`/api/workspace/files?path=${encodeURIComponent(resolvePath(action.path))}`);
+              if (!res.ok) throw new Error(await res.text());
+              const data = await res.json();
+              outcome = `Directory items inside ${action.path}:\n${data.map((d: any) => `${d.isDirectory ? '[Dir]' : '[File]'} ${d.name}`).join('\n')}`;
+            } else if (action.type === 'delete_file') {
+              const res = await fetch('/api/workspace/file/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: resolvePath(action.path) })
+              });
+              if (!res.ok) throw new Error(await res.text());
+              outcome = `Deleted ${action.path} successfully.`;
+            } else if (action.type === 'run_command') {
+              const res = await fetch('/api/workspace/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: workspacePath, command: action.command })
+              });
+              if (!res.ok) throw new Error(await res.text());
+              const data = await res.json();
+              outcome = `Command run status: ${data.success ? 'Success' : 'Failure'}\nStdout:\n${data.stdout}\nStderr:\n${data.stderr}`;
+            } else if (action.type === 'search_project') {
+              const res = await fetch(`/api/workspace/search?folder=${encodeURIComponent(workspacePath || '')}&query=${encodeURIComponent(action.query)}`);
+              if (!res.ok) throw new Error(await res.text());
+              const data = await res.json();
+              outcome = `Search matches for "${action.query}":\n${data.map((d: any) => `${d.relative}:${d.line} - ${d.content}`).join('\n')}`;
+            } else {
+              throw new Error(`Unsupported action type: ${action.type}`);
+            }
+
+            updateAgentTaskStatus(taskId, 'completed', outcome.slice(0, 300));
+          } catch (e: any) {
+            outcome = `Action failed: ${e.message}`;
+            updateAgentTaskStatus(taskId, 'failed', e.message);
+          }
+
+          results.push(`Action result for <action type="${action.type}" path="${action.path}" command="${action.command}" query="${action.query}">:\n${outcome}`);
+        }
+
+        // Add outcome to history
+        activeHistory.push({ role: 'user', content: results.join('\n\n') });
+
+        // Prepare placeholder for the next assistant loop cycle response
+        addChatMessage({
+          id: Math.random().toString(),
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isStreaming: true
+        });
+
+      } catch (err: any) {
+        updateLastChatMessage(`Agent runtime error: ${err.message}`, false);
+        break;
       }
-      updateLastChatMessage('', false);
-    } catch (e) {
-      updateLastChatMessage('Agent workflow finalized successfully.', false);
-    } finally {
-      setAiGenerating(false);
     }
+
+    setAiGenerating(false);
   };
 
   // Custom Markdown & Code block parser

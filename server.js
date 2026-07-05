@@ -220,6 +220,22 @@ app.prepare().then(() => {
     }
   });
 
+  // Run shell command
+  expressApp.post('/api/workspace/command', (req, res) => {
+    const { folder, command } = req.body;
+    if (!folder || !command) return res.status(400).json({ error: 'Folder and command are required' });
+    const resolvedPath = path.resolve(folder);
+
+    exec(command, { cwd: resolvedPath }, (error, stdout, stderr) => {
+      res.json({
+        success: !error,
+        stdout: stdout || '',
+        stderr: stderr || '',
+        error: error ? error.message : null
+      });
+    });
+  });
+
   // Global project search
   expressApp.get('/api/workspace/search', (req, res) => {
     const { folder, query, isRegex, matchCase, include, exclude } = req.query;
