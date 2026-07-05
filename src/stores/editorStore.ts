@@ -207,7 +207,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     const last = nextMsg[nextMsg.length - 1];
     nextMsg[nextMsg.length - 1] = {
       ...last,
-      content: isStreaming ? (last.content + content) : content,
+      content: isStreaming ? (last.content + content) : (content || last.content),
       isStreaming
     };
     return { chatMessages: nextMsg };
