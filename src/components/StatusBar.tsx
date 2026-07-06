@@ -3,130 +3,149 @@
 import React from 'react';
 import { 
   GitBranch, 
-  Terminal, 
+  Terminal,
   CheckCircle2, 
   AlertCircle, 
   AlertTriangle,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import { useEditorStore } from '../stores/editorStore';
 import { useGitStatus } from '../hooks/useWorkspace';
 
-export default function StatusBar() {
-  const { workspacePath, activeFile, settings } = useEditorStore();
-  const { data: gitData } = useGitStatus(workspacePath);
-  
-  // Extract active file extension for language guessing
-  let language = 'Plain Text';
-  if (activeFile) {
-    const ext = activeFile.split('.').pop()?.toLowerCase();
-    const mapping: Record<string, string> = {
-      ts: 'TypeScript',
-      tsx: 'TypeScript JSX',
-      js: 'JavaScript',
-      jsx: 'JavaScript JSX',
-      json: 'JSON',
-      html: 'HTML',
-      css: 'CSS',
-      md: 'Markdown',
-      py: 'Python',
-      go: 'Go',
-      rs: 'Rust',
-      dockerfile: 'Dockerfile',
-      yml: 'YAML',
-      yaml: 'YAML'
-    };
-    language = mapping[ext || ''] || 'Plain Text';
-  }
+const EXT_LANGUAGE: Record<string, string> = {
+  ts:         'TypeScript',
+  tsx:        'TypeScript JSX',
+  js:         'JavaScript',
+  jsx:        'JavaScript JSX',
+  json:       'JSON',
+  html:       'HTML',
+  css:        'CSS',
+  scss:       'SCSS',
+  md:         'Markdown',
+  mdx:        'MDX',
+  py:         'Python',
+  go:         'Go',
+  rs:         'Rust',
+  java:       'Java',
+  c:          'C',
+  cpp:        'C++',
+  cs:         'C#',
+  php:        'PHP',
+  rb:         'Ruby',
+  sh:         'Shell',
+  bash:       'Bash',
+  dockerfile: 'Dockerfile',
+  yml:        'YAML',
+  yaml:       'YAML',
+  toml:       'TOML',
+  xml:        'XML',
+  sql:        'SQL',
+  graphql:    'GraphQL',
+  prisma:     'Prisma',
+  env:        'Env',
+};
 
-  // Count fake errors/warnings for visual richness
-  const errorCount = 0;
-  const warningCount = 0;
+export default function StatusBar() {
+  const { workspacePath, activeFile, settings, isAiGenerating } = useEditorStore();
+  const { data: gitData } = useGitStatus(workspacePath);
+
+  const language = activeFile
+    ? (EXT_LANGUAGE[activeFile.split('.').pop()?.toLowerCase() ?? ''] ?? 'Plain Text')
+    : 'Plain Text';
+
+  const pendingChanges = gitData?.changes?.length ?? 0;
 
   return (
-    <div className="h-6 w-full bg-[#09090B] border-t border-[rgba(255,255,255,0.06)] flex items-center justify-between px-3 text-[11px] text-[#A1A1AA] select-none z-50">
-      
-      {/* Left side: Git branch & Errors */}
+    <div className="h-[22px] w-full bg-[#07070A] border-t border-[rgba(255,255,255,0.05)] flex items-center justify-between px-3 text-[10.5px] text-[#52525B] select-none z-50 shrink-0">
+
+      {/* ── Left side ── */}
       <div className="flex items-center gap-3">
-        {/* Branch */}
+
+        {/* Git branch */}
         {gitData?.isRepository ? (
-          <div className="flex items-center gap-1 hover:text-white cursor-pointer transition-colors">
-            <GitBranch className="w-3 h-3 text-[#A1A1AA]" />
+          <button className="flex items-center gap-1 hover:text-[#A1A1AA] cursor-pointer transition-colors">
+            <GitBranch className="w-2.5 h-2.5" />
             <span>{gitData.branch}</span>
-          </div>
+          </button>
         ) : (
           <div className="flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>No repository</span>
+            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500/70" />
+            <span>No repo</span>
           </div>
         )}
 
-        {/* Sync changes status indicator */}
-        {gitData?.isRepository && gitData.changes.length > 0 && (
-          <div className="flex items-center gap-1 text-[#8B5CF6]">
-            <RefreshCw className="w-2.5 h-2.5 animate-spin" style={{ animationDuration: '3s' }} />
-            <span>{gitData.changes.length} pending changes</span>
+        {/* Pending changes badge */}
+        {gitData?.isRepository && pendingChanges > 0 && (
+          <div className="flex items-center gap-1 text-amber-500/70">
+            <RefreshCw className="w-2 h-2" style={{ animationDuration: '3s' }} />
+            <span>{pendingChanges} change{pendingChanges !== 1 ? 's' : ''}</span>
           </div>
         )}
 
-        {/* Diagnostics warnings & errors */}
-        <div className="flex items-center gap-2 border-l border-white/5 pl-3">
-          <button className="flex items-center gap-0.5 hover:text-rose-400 transition-colors cursor-pointer">
-            <AlertCircle className="w-3 h-3 text-rose-500" />
-            <span>{errorCount}</span>
+        {/* Divider */}
+        <span className="text-white/8">│</span>
+
+        {/* Diagnostics */}
+        <div className="flex items-center gap-2">
+          <button className="flex items-center gap-0.5 hover:text-rose-400/80 transition-colors cursor-pointer">
+            <AlertCircle className="w-2.5 h-2.5 text-rose-500/60" />
+            <span>0</span>
           </button>
-          <button className="flex items-center gap-0.5 hover:text-amber-400 transition-colors cursor-pointer">
-            <AlertTriangle className="w-3 h-3 text-amber-500" />
-            <span>{warningCount}</span>
+          <button className="flex items-center gap-0.5 hover:text-amber-400/80 transition-colors cursor-pointer">
+            <AlertTriangle className="w-2.5 h-2.5 text-amber-500/60" />
+            <span>0</span>
           </button>
         </div>
       </div>
 
-      {/* Right side: Editor configuration parameters */}
-      <div className="flex items-center gap-4">
+      {/* ── Right side ── */}
+      <div className="flex items-center gap-3">
+
         {/* Workspace status */}
-        <div className="flex items-center gap-1.5">
-          <Terminal className="w-3.5 h-3.5 text-violet-400" />
-          <span className="truncate max-w-[200px] text-white/50">
-            {workspacePath ? 'Ready' : 'No workspace'}
-          </span>
+        <div className="flex items-center gap-1">
+          <Terminal className="w-2.5 h-2.5 text-violet-500/60" />
+          <span>{workspacePath ? 'Ready' : 'No workspace'}</span>
         </div>
 
-        {/* Line & column indicators */}
+        {/* Cursor position */}
         {activeFile && (
-          <div className="hover:text-white cursor-pointer transition-colors">
+          <button className="hover:text-[#A1A1AA] cursor-pointer transition-colors">
             Ln 1, Col 1
-          </div>
+          </button>
         )}
 
-        {/* Tab Size */}
-        <div className="hover:text-white cursor-pointer transition-colors">
-          Spaces: {settings.tabSize}
-        </div>
+        {/* Tab size */}
+        <button className="hover:text-[#A1A1AA] cursor-pointer transition-colors">
+          Spaces: {settings.tabSize ?? 2}
+        </button>
 
         {/* Encoding */}
-        <div className="hover:text-white cursor-pointer transition-colors">
+        <button className="hover:text-[#A1A1AA] cursor-pointer transition-colors">
           UTF-8
-        </div>
+        </button>
 
-        {/* Line Ending */}
-        <div className="hover:text-white cursor-pointer transition-colors">
+        {/* EOL */}
+        <button className="hover:text-[#A1A1AA] cursor-pointer transition-colors">
           LF
-        </div>
+        </button>
 
         {/* Language */}
-        <div className="hover:text-white cursor-pointer transition-colors text-white font-medium bg-white/5 border border-white/5 rounded px-1.5 py-0.5">
+        <button className="hover:text-white cursor-pointer transition-colors text-[#A1A1AA] font-medium bg-white/4 border border-white/5 rounded px-1.5 py-px">
           {language}
-        </div>
+        </button>
 
-        {/* AI engine */}
-        <div className="flex items-center gap-1.5 text-violet-400 border-l border-white/5 pl-3 cursor-pointer hover:text-white transition-colors">
-          <Sparkles className="w-3 h-3" />
-          <span>AI Active</span>
+        {/* AI status */}
+        <div className={`flex items-center gap-1 border-l border-white/6 pl-2.5 ${isAiGenerating ? 'text-violet-400' : 'text-[#52525B]'} transition-colors`}>
+          {isAiGenerating ? (
+            <Zap className="w-2.5 h-2.5 animate-pulse" />
+          ) : (
+            <Sparkles className="w-2.5 h-2.5" />
+          )}
+          <span>{isAiGenerating ? 'AI working…' : 'AI Ready'}</span>
         </div>
       </div>
-
     </div>
   );
 }

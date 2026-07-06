@@ -28,6 +28,8 @@ interface EditorState {
   // Layout Panels
   activeSidebarTab: 'explorer' | 'search' | 'git' | 'ai' | 'settings';
   setActiveSidebarTab: (tab: 'explorer' | 'search' | 'git' | 'ai' | 'settings') => void;
+  isSettingsOpen: boolean;
+  setIsSettingsOpen: (open: boolean) => void;
   isSidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
   isBottomCollapsed: boolean;
@@ -141,10 +143,9 @@ export const useEditorStore = create<EditorState>((set) => ({
   }),
   
   activeSidebarTab: 'explorer',
-  setActiveSidebarTab: (tab) => set((state) => ({
-    activeSidebarTab: tab,
-    isSidebarCollapsed: state.activeSidebarTab === tab && !state.isSidebarCollapsed ? true : false
-  })),
+  setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab, isSidebarCollapsed: false }),
+  isSettingsOpen: false,
+  setIsSettingsOpen: (open) => set({ isSettingsOpen: open }),
   isSidebarCollapsed: false,
   setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
   isBottomCollapsed: false,

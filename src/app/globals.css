@@ -1,160 +1,257 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
+/* ─── Design Tokens ─────────────────────────────────────────── */
 :root {
-  --background: #09090B;
-  --foreground: #FFFFFF;
-  --panel-bg: #111113;
-  --card-bg: #17171B;
-  --border-color: rgba(255, 255, 255, 0.06);
-  --primary: #7C3AED;
-  --accent: #8B5CF6;
-  --success: #10B981;
-  --warning: #F59E0B;
-  --danger: #EF4444;
-  --text: #FFFFFF;
-  --text-secondary: #A1A1AA;
+  /* Background layers */
+  --bg-root:    #09090B;
+  --bg-panel:   #111113;
+  --bg-card:    #17171B;
+  --bg-hover:   rgba(255, 255, 255, 0.04);
+
+  /* Borders */
+  --border:     rgba(255, 255, 255, 0.06);
+  --border-md:  rgba(255, 255, 255, 0.10);
+
+  /* Brand */
+  --primary:    #7C3AED;
+  --accent:     #8B5CF6;
+  --accent-dim: rgba(139, 92, 246, 0.15);
+
+  /* Semantic */
+  --success:    #10B981;
+  --warning:    #F59E0B;
+  --danger:     #EF4444;
+  --info:       #3B82F6;
+
+  /* Text */
+  --text:       #FFFFFF;
+  --text-2:     #A1A1AA;
+  --text-muted: #52525B;
+
+  /* Legacy aliases (keep for backward compat) */
+  --background:    var(--bg-root);
+  --foreground:    var(--text);
+  --panel-bg:      var(--bg-panel);
+  --card-bg:       var(--bg-card);
+  --border-color:  var(--border);
+  --text-secondary: var(--text-2);
 }
 
 @theme {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-panel: var(--panel-bg);
-  --color-card: var(--card-bg);
-  --color-border: var(--border-color);
-  --color-primary: var(--primary);
-  --color-accent: var(--accent);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
-  --color-text-secondary: var(--text-secondary);
+  --color-background:    var(--bg-root);
+  --color-foreground:    var(--text);
+  --color-panel:         var(--bg-panel);
+  --color-card:          var(--bg-card);
+  --color-border:        var(--border);
+  --color-primary:       var(--primary);
+  --color-accent:        var(--accent);
+  --color-success:       var(--success);
+  --color-warning:       var(--warning);
+  --color-danger:        var(--danger);
+  --color-info:          var(--info);
+  --color-text-secondary: var(--text-2);
 }
 
-* {
+/* ─── Reset ─────────────────────────────────────────────────── */
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+/* ─── Base ───────────────────────────────────────────────────── */
+html, body {
+  height: 100%;
+  width: 100%;
   overflow: hidden;
-  height: 100vh;
-  width: 100vw;
+}
+
+body {
+  background-color: var(--bg-root);
+  color: var(--text);
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbar */
+/* ─── Custom Scrollbar ───────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.14);
 }
 
-/* Glassmorphism utility */
+/* ─── Glass Utilities ────────────────────────────────────────── */
 .glass {
-  background: rgba(17, 17, 19, 0.8);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(17, 17, 19, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
 }
 
 .glass-card {
-  background: rgba(23, 23, 27, 0.7);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(23, 23, 27, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
 }
 
-/* Monaco overrides */
+.glass-elevated {
+  background: rgba(30, 30, 34, 0.90);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ─── Monaco Editor Overrides ────────────────────────────────── */
 .monaco-editor,
-.monaco-editor .margin {
+.monaco-editor .margin,
+.monaco-editor-background {
   background-color: transparent !important;
 }
 
 .monaco-editor .minimap {
-  opacity: 0.7;
+  opacity: 0.6;
+  transition: opacity 0.2s;
 }
-
 .monaco-editor .minimap:hover {
   opacity: 1;
 }
 
-/* Terminal custom styles */
+/* ─── Terminal ───────────────────────────────────────────────── */
 .xterm {
-  padding: 12px;
+  padding: 12px 14px;
   height: 100%;
+  width: 100%;
 }
-
 .xterm-viewport {
   background-color: transparent !important;
   overflow-y: auto !important;
 }
-
 .xterm-screen {
-  font-family: "Fira Code", JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-feature-settings: "liga" 1;
 }
 
-/* Utility Animations */
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(124, 58, 237, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(124, 58, 237, 0.7);
-  }
-}
-
-.glow-active {
-  animation: pulse-glow 2s infinite ease-in-out;
-}
-
-/* Tab animations and active states */
+/* ─── Tab States ─────────────────────────────────────────────── */
 .tab-active {
-  background: rgba(124, 58, 237, 0.15);
-  border-bottom: 2px solid #8B5CF6;
+  background: rgba(124, 58, 237, 0.12);
+  border-bottom: 2px solid var(--accent);
   color: #FFFFFF;
 }
 
-/* Selectable overlays */
+/* ─── File Tree ──────────────────────────────────────────────── */
 .tree-node-hover:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-hover);
 }
-
 .tree-node-selected {
-  background: rgba(124, 58, 237, 0.08);
+  background: var(--accent-dim);
   color: #FFFFFF;
-  border-left: 2px solid #8B5CF6;
+  border-left: 2px solid var(--accent);
 }
 
-/* Shimmer Loading Effect */
+/* ─── Chat Markdown ──────────────────────────────────────────── */
+.chat-markdown code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.chat-markdown pre {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.chat-markdown pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+}
+.chat-markdown p { margin-bottom: 6px; }
+.chat-markdown ul, .chat-markdown ol { padding-left: 1.2em; margin-bottom: 6px; }
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 {
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: #fff;
+}
+
+/* ─── Shimmer Loading ────────────────────────────────────────── */
 .shimmer {
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.03) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.07) 50%,
     rgba(255, 255, 255, 0.03) 75%
   );
   background-size: 200% 100%;
-  animation: loading-shimmer 1.5s infinite;
+  animation: shimmer-sweep 1.5s infinite;
+}
+@keyframes shimmer-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
-@keyframes loading-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+/* ─── Glow Pulse ─────────────────────────────────────────────── */
+.glow-active {
+  animation: pulse-glow 2.4s infinite ease-in-out;
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(124, 58, 237, 0.35); }
+  50%       { box-shadow: 0 0 20px rgba(124, 58, 237, 0.65); }
+}
+
+/* ─── Streaming Cursor ───────────────────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.streaming-cursor::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: blink 0.9s steps(1) infinite;
+  font-size: 0.85em;
+  vertical-align: middle;
+}
+
+/* ─── Resize Handles ─────────────────────────────────────────── */
+.resize-handle {
+  position: relative;
+  z-index: 10;
+  transition: background-color 0.15s;
+}
+.resize-handle:hover {
+  background-color: var(--accent-dim) !important;
+}
+.resize-handle:active {
+  background-color: rgba(139, 92, 246, 0.3) !important;
+}
+
+/* ─── Focus Ring ─────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

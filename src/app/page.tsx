@@ -47,6 +47,8 @@ function EditorMain() {
     isBottomCollapsed,
     activeBottomTab,
     isAiPanelOpen,
+    isSettingsOpen,
+    setIsSettingsOpen,
     sidebarWidth,
     setSidebarWidth,
     bottomHeight,
@@ -62,7 +64,6 @@ function EditorMain() {
   const [validationError, setValidationError] = useState<string | null>(null);
   
   const [isCommandOpen, setIsCommandOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Validate the workspace folder parameter
   useEffect(() => {
@@ -314,7 +315,6 @@ function EditorMain() {
       {/* Status Bar */}
       <StatusBar />
 
-      {/* Dialog overlays */}
       <AnimatePresence>
         {isCommandOpen && (
           <CommandPalette 
