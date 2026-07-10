@@ -622,58 +622,7 @@ Rules:
 
       {/* Input area */}
       <div className="px-3 pb-3 pt-2 border-t border-white/[0.05] bg-[#0c0c0f]/60 shrink-0">
-        {/* Context badge */}
-        {settings.contextInjectionEnabled && contextFile && (
-          <div className="flex items-center gap-1.5 mb-2 px-1">
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10.5px] text-emerald-400">
-              <Paperclip className="w-2.5 h-2.5" />
-              <span>{contextFile.split('/').pop()}</span>
-              <button onClick={() => { setContextFile(null); updateSettings({ contextInjectionEnabled: false }); }}>
-                <XCircle className="w-2.5 h-2.5 ml-0.5 hover:text-rose-400 transition-colors" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Model selector */}
-        <div className="flex items-center justify-between mb-2 px-1">
-          <div className="relative">
-            <button
-              onClick={() => setShowModelPicker(p => !p)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10.5px] text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-all"
-            >
-              <Sparkles className="w-2.5 h-2.5 text-violet-400" />
-              <span>{currentModel.label}</span>
-              <ChevronDown className="w-2.5 h-2.5" />
-            </button>
-            {showModelPicker && (
-              <motion.div
-                initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                className="absolute bottom-full mb-1.5 left-0 z-50 bg-[#17171b] border border-white/10 rounded-xl shadow-2xl p-1.5 min-w-[200px]"
-              >
-                {GROQ_MODELS.map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => { updateSettings({ aiModel: m.id }); setShowModelPicker(false); }}
-                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[11.5px] transition-colors ${
-                      m.id === settings.aiModel
-                        ? 'bg-violet-600/20 text-violet-300'
-                        : 'hover:bg-white/5 text-zinc-300 hover:text-white'
-                    }`}
-                  >
-                    <span>{m.label}</span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/5 text-zinc-500">{m.badge}</span>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </div>
-          {isAgentMode && (
-            <span className="text-[10px] text-violet-400 font-medium">Agent Mode Active</span>
-          )}
-        </div>
-
+        
         {/* Mention picker */}
         {showMentionPicker && filteredFiles.length > 0 && (
           <motion.div
@@ -687,38 +636,134 @@ Rules:
                 onClick={() => handleMentionSelect(f)}
                 className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] text-zinc-300 hover:text-white hover:bg-white/5 transition-colors text-left"
               >
-                <FileCode className="w-3 h-3 text-zinc-500 shrink-0" />
+                <FileCode className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                 <span className="truncate">{f.replace(workspacePath || '', '').replace(/^\//, '')}</span>
               </button>
             ))}
           </motion.div>
         )}
 
-        {/* Textarea */}
-        <form onSubmit={handleSend}>
-          <div className="relative flex items-end bg-[#17171b] border border-white/[0.07] focus-within:border-violet-500/40 rounded-2xl p-3 shadow-lg transition-all">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-                if (e.key === 'Escape') setShowMentionPicker(false);
-              }}
-              placeholder={isAgentMode ? 'Give the agent a task… (e.g. "add error handling to all API routes")' : 'Ask anything… type @ to mention a file'}
-              rows={1}
-              className="w-full bg-transparent text-[12.5px] text-white placeholder-zinc-600 outline-none resize-none leading-relaxed pr-10 select-text"
-              style={{ maxHeight: '140px', overflowY: 'auto' }}
-            />
-            <div className="absolute right-3 bottom-2.5 flex items-center gap-1.5">
+        {/* Unified Input Card */}
+        <form onSubmit={handleSend} className="relative flex flex-col bg-[#17171b] border border-white/[0.07] focus-within:border-violet-500/40 rounded-3xl overflow-hidden p-2 shadow-lg transition-all">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+              if (e.key === 'Escape') setShowMentionPicker(false);
+            }}
+            placeholder={isAgentMode ? 'Give the agent a task… (e.g. "add error handling to all API routes")' : 'Ask anything… type @ to mention a file'}
+            rows={1}
+            className="w-full bg-transparent text-[12.5px] text-zinc-100 placeholder-zinc-500 outline-none resize-none leading-relaxed px-3 pt-2 pb-1 select-text"
+            style={{ maxHeight: '140px', overflowY: 'auto' }}
+          />
+
+          {/* Controls Bar Row (inside the unified card) */}
+          <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5 border-t border-white/[0.03]">
+            <div className="flex items-center gap-2">
+              {/* Attachment Context Plus Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (settings.contextInjectionEnabled) {
+                    updateSettings({ contextInjectionEnabled: false });
+                    setContextFile(null);
+                  } else {
+                    updateSettings({ contextInjectionEnabled: true });
+                    setContextFile(activeFile);
+                  }
+                }}
+                title={settings.contextInjectionEnabled ? `Context: ${contextFile?.split('/').pop()}` : 'Add active file context'}
+                className={`p-1.5 rounded-full transition-colors flex items-center justify-center ${
+                  settings.contextInjectionEnabled
+                    ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                    : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Context active pill */}
+              {settings.contextInjectionEnabled && contextFile && (
+                <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 shrink-0">
+                  <Paperclip className="w-2.5 h-2.5" />
+                  <span className="max-w-[70px] truncate">{contextFile.split('/').pop()}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setContextFile(null); updateSettings({ contextInjectionEnabled: false }); }}
+                    className="hover:text-rose-400 transition-colors"
+                  >
+                    <XCircle className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Model Picker Pill */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowModelPicker(p => !p)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] bg-white/5 text-zinc-400 hover:text-zinc-200 hover:bg-white/10 transition-all font-medium"
+                >
+                  <Sparkles className="w-2.5 h-2.5 text-violet-400" />
+                  <span>{currentModel.label}</span>
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </button>
+                {showModelPicker && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    className="absolute bottom-full mb-1.5 left-0 z-50 bg-[#17171b] border border-white/10 rounded-xl shadow-2xl p-1.5 min-w-[200px]"
+                  >
+                    {GROQ_MODELS.map(m => (
+                      <button
+                        type="button"
+                        key={m.id}
+                        onClick={() => { updateSettings({ aiModel: m.id }); setShowModelPicker(false); }}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-[11.5px] transition-colors ${
+                          m.id === settings.aiModel
+                            ? 'bg-violet-600/20 text-violet-300'
+                            : 'hover:bg-white/5 text-zinc-300 hover:text-white'
+                        }`}
+                      >
+                        <span>{m.label}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/5 text-zinc-500">{m.badge}</span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Agent mode pill badge */}
+              {isAgentMode && (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-violet-600/15 border border-violet-500/30 text-violet-300 font-semibold tracking-wide shadow-[0_0_8px_rgba(124,58,237,0.15)]">
+                  Agent
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {/* Mic Icon (design ornament) */}
+              <button
+                type="button"
+                className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors hover:bg-white/5 rounded-full flex items-center justify-center"
+                title="Voice Input (design only)"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              </button>
+
+              {/* Send/Stop Button */}
               {isAiGenerating ? (
                 <button
                   type="button"
                   onClick={handleStopGeneration}
-                  className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg text-rose-400 cursor-pointer transition-colors"
+                  className="w-7.5 h-7.5 flex items-center justify-center bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-full text-rose-400 cursor-pointer transition-colors"
                 >
                   <StopCircle className="w-3.5 h-3.5" />
                 </button>
@@ -726,21 +771,24 @@ Rules:
                 <button
                   type="submit"
                   disabled={!input.trim()}
-                  className="p-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg text-white transition-all hover:shadow-[0_0_12px_rgba(139,92,246,0.4)]"
+                  className="w-7.5 h-7.5 flex items-center justify-center bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed rounded-full text-white transition-all hover:shadow-[0_0_12px_rgba(139,92,246,0.4)]"
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  <svg className="w-3.5 h-3.5 transform rotate-45 -translate-x-px translate-y-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
                 </button>
               )}
             </div>
           </div>
-          <p className="text-center text-[10px] text-zinc-700 mt-1.5">
-            Enter to send · Shift+Enter for new line · @ to mention file
-          </p>
         </form>
+        <p className="text-center text-[9px] text-zinc-700 mt-1.5 select-none">
+          Enter to send · Shift+Enter for new line · @ to mention file
+        </p>
       </div>
     </div>
   );
 }
+
 
 // ──────────────────────────────────────────────
 // Sub-components
@@ -797,37 +845,24 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
-      className={`flex gap-2.5 ${isUser ? 'flex-row-reverse self-end max-w-[92%]' : 'self-start max-w-full'}`}
+      className={`flex flex-col ${isUser ? 'items-end self-end max-w-[85%]' : 'items-start self-start w-full'}`}
     >
-      {/* Avatar */}
-      <div className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center mt-0.5 ${
-        isUser ? 'bg-zinc-700' : 'bg-violet-600/20 border border-violet-500/30'
-      }`}>
-        {isUser ? <User className="w-3.5 h-3.5 text-zinc-300" /> : <Bot className="w-3.5 h-3.5 text-violet-400" />}
-      </div>
-
-      {/* Bubble */}
-      <div className={`rounded-2xl px-4 py-3 text-[12.5px] max-w-full ${
-        isUser
-          ? 'bg-violet-600/15 border border-violet-500/25 text-white rounded-tr-sm'
-          : 'bg-[#17171b] border border-white/[0.05] text-zinc-200 rounded-tl-sm'
-      }`}>
-        {isUser ? (
-          <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-        ) : (
-          <>
-            <MarkdownRenderer content={msg.content} onApplyCode={handleApply} />
-            {msg.isStreaming && (
-              <span className="inline-flex items-center gap-1 mt-1 text-violet-400">
-                <span className="w-1 h-3.5 bg-violet-400 rounded-sm animate-pulse" />
-              </span>
-            )}
-          </>
-        )}
-      </div>
+      {isUser ? (
+        <div className="rounded-[22px] px-4.5 py-2.5 text-[12.5px] bg-[#242429] border border-white/[0.05] text-zinc-100 whitespace-pre-wrap leading-relaxed select-text shadow-sm">
+          {msg.content}
+        </div>
+      ) : (
+        <div className="text-[12.5px] w-full text-zinc-200 leading-relaxed pr-2 select-text">
+          <MarkdownRenderer content={msg.content} onApplyCode={handleApply} />
+          {msg.isStreaming && (
+            <span className="inline-block w-1.5 h-4 bg-violet-400 rounded-sm animate-pulse ml-1 align-middle" />
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
+
 
 function AgentTimeline({ tasks, loopCount, expandedTasks, onToggle }: {
   tasks: AiAgentTask[];
