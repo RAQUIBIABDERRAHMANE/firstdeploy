@@ -56,6 +56,8 @@ export default function AiPanel() {
   const [gitBranchName, setGitBranchName] = useState<string | null>(null);
   const [securityReport, setSecurityReport] = useState<{ performance: number; security: number; maintainability: number; status: 'APPROVED' | 'NEEDS FIXES'; content: string } | null>(null);
   const [permissionRequest, setPermissionRequest] = useState<{ id: string; type: string; label: string; resolve: (allowed: boolean) => void } | null>(null);
+  const [selectedAgentMode, setSelectedAgentMode] = useState<'team' | 'architect' | 'developer' | 'security'>('team');
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatController = useRef<AbortController | null>(null);
@@ -221,9 +223,16 @@ export default function AiPanel() {
 
     if (isAgentMode) {
       currentGoalRef.current = userText;
-      runArchitectWorkflow(userText, assistantMsgId);
+      if (selectedAgentMode === 'developer') {
+        runDeveloperWorkflowDirectly(userText, assistantMsgId);
+      } else if (selectedAgentMode === 'security') {
+        runSecurityWorkflowDirectly(userText, assistantMsgId);
+      } else {
+        runArchitectWorkflow(userText, assistantMsgId);
+      }
       return;
     }
+
 
     // Standard streaming chat
     try {
@@ -318,7 +327,9 @@ export default function AiPanel() {
 You must NEVER write or modify files, run command operations, or perform deletions.
 You CAN read files, search project, or get compile diagnostics if needed.
 
-Your response must contain a detailed Markdown plan:
+If the user's input is a general conversation, greeting (e.g. "hi", "hello", "hey"), or is too vague to form a concrete technical plan, you MUST NOT output an implementation plan. Instead, greet the user, ask clarifying questions, and request details about the project or their technical needs. In this conversational mode, do NOT write the "WAITING FOR USER APPROVAL" line.
+
+If the request is a concrete technical requirement, construct a detailed Markdown plan:
 # PROJECT ANALYSIS
 Current architecture: (brief explanation)
 Problem identified: (summary)
@@ -416,14 +427,281 @@ WAITING FOR USER APPROVAL${memoryContext}`;
         return;
       }
 
-      setProposedPlan(accumulated);
-      setAgentPhase('approval_required');
+      const hasApprovalLine = accumulated.includes('WAITING FOR USER APPROVAL');
+      if (hasApprovalLine && selectedAgentMode !== 'architect') {
+        setProposedPlan(accumulated);
+        setAgentPhase('approval_required');
+      } else {
+        setAgentPhase('idle');
+      }
       setActiveAgent(null);
       setCurrentActivity(null);
       setAiGenerating(false);
 
     } catch (e: any) {
       updateLastChatMessage(`⚠️ Architect Error: ${e.message}`, false);
+      setAiGenerating(false);
+      setAgentPhase('failed');
+    }
+  };
+
+  const runDeveloperWorkflowDirectly = async (userGoal: string, assistantMsgId: string) => {
+    setAgentPhase('development');
+    setActiveAgent('developer');
+    setAiGenerating(true);
+    setCurrentActivity('Initializing Git checkout branch...');
+    setAgentProgress(10);
+
+    await initGitBranch(userGoal);
+
+    setCurrentActivity('Starting code modifications directly...');
+    setAgentProgress(25);
+
+    const DEVELOPER_SYSTEM_PROMPT = `You are a Senior Full-Stack Developer. Your goal is to implement the user's request.
+Read existing files fully before editing, maintain existing code architecture, and implement minimal clean changes.
+
+To make changes, output XML action blocks:
+<action type="read_file" path="src/index.ts"></action>
+<action type="write_file" path="src/utils.ts">
+export const add = (a: number, b: number) => a + b;
+</action>
+<action type="list_dir" path="src"></action>
+<action type="delete_file" path="src/old.ts"></action>
+<action type="run_command" command="npm run build"></action>
+<action type="search_project" query="export const"></action>
+<action type="get_diagnostics"></action>
+
+Rules:
+- You must write the ENTIRE file content inside the write_file content.
+- Git branch has already been initialized. Write code and check build status.
+- Once implementation is complete, output a detailed summary of changes. Do not output any more action blocks.`;
+
+    let history = [
+      { role: 'system', content: DEVELOPER_SYSTEM_PROMPT },
+      { role: 'user', content: userGoal }
+    ];
+
+    const MAX_LOOPS = 15;
+    let loop = 0;
+
+    const runDevLoop = async () => {
+      while (loop < MAX_LOOPS) {
+        loop++;
+        setAgentLoopCount(loop);
+        setAgentProgress(Math.min(25 + loop * 5, 95));
+
+        const devMsgId = Math.random().toString();
+        addChatMessage({ id: devMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true });
+
+        try {
+          const response = await fetch('/api/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: history,
+              systemPrompt: DEVELOPER_SYSTEM_PROMPT,
+              customApiKey: settings.apiKey,
+              model: settings.aiModel
+            })
+          });
+
+          if (!response.ok) throw new Error('Developer fetch failed');
+
+          let accumulated = '';
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+              for (const line of lines) {
+                const clean = line.trim();
+                if (clean.startsWith('data:')) {
+                  const data = clean.slice(5).trim();
+                  if (data === '[DONE]') continue;
+                  try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.text) {
+                      accumulated += parsed.text;
+                      updateLastChatMessage(parsed.text, true);
+                    }
+                  } catch {}
+                }
+              }
+            }
+          }
+          updateLastChatMessage('', false);
+
+          const actionRegex = /<action\s+type="([^"]+)"(?:\s+path="([^"]+)")?(?:\s+command="([^"]+)")?(?:\s+query="([^"]+)")?>([\s\S]*?)<\/action>/g;
+          const actions = [];
+          let match;
+          while ((match = actionRegex.exec(accumulated)) !== null) {
+            actions.push({ type: match[1], path: match[2] || '', command: match[3] || '', query: match[4] || '', content: match[5] || '' });
+          }
+
+          if (actions.length === 0) {
+            history.push({ role: 'assistant', content: accumulated });
+            break;
+          }
+
+          history.push({ role: 'assistant', content: accumulated });
+          const results = [];
+
+          for (const action of actions) {
+            const taskId = Math.random().toString();
+            const label = action.path || action.command || action.query || action.type;
+            addAgentTask({ id: taskId, type: getTaskType(action.type), description: `Dev: ${action.type}: ${label}`, status: 'running' });
+            setCurrentActivity(`Developer: Executing ${action.type} (${label})`);
+
+            const isLevel3 = ['run_command', 'delete_file'].includes(action.type);
+            let outcome = '';
+
+            try {
+              if (isLevel3) {
+                const allowed = await requestHumanPermission(action.type, label);
+                if (!allowed) {
+                  updateAgentTaskStatus(taskId, 'failed', 'Permission Denied');
+                  outcome = `Error: User denied execution permission for ${action.type} on: ${label}`;
+                  results.push(`<action_result type="${action.type}">\n${outcome}\n</action_result>`);
+                  continue;
+                }
+              }
+
+              outcome = await executeAction(action);
+              updateAgentTaskStatus(taskId, 'completed', outcome.slice(0, 400));
+            } catch (e: any) {
+              updateAgentTaskStatus(taskId, 'failed', e.message);
+              outcome = `Error: ${e.message}`;
+            }
+
+            results.push(`<action_result type="${action.type}">\n${outcome}\n</action_result>`);
+          }
+
+          history.push({ role: 'user', content: results.join('\n\n') });
+
+        } catch (e: any) {
+          updateLastChatMessage(`⚠️ Developer Error: ${e.message}`, false);
+          break;
+        }
+      }
+
+      setAgentProgress(100);
+      setAgentPhase('completed');
+      setActiveAgent(null);
+      setCurrentActivity(null);
+      setAiGenerating(false);
+      await saveProjectMemory(`Direct Developer changes for: ${currentGoalRef.current}`);
+    };
+
+    runDevLoop();
+  };
+
+  const runSecurityWorkflowDirectly = async (userGoal: string, assistantMsgId: string) => {
+    setAgentPhase('reviewing');
+    setActiveAgent('security');
+    setAiGenerating(true);
+    setCurrentActivity('Security & QA Agent: Performing security audit directly...');
+    setAgentProgress(50);
+
+    const SECURITY_SYSTEM_PROMPT = `You are a Senior Security & QA Engineer. Your role is to inspect the codebase context and user's query for security vulnerabilities.
+Review code quality, error handling, performance issues, and search for standard backend/frontend security vulnerabilities.
+
+Your response must strictly conclude with this exact visual scorecard:
+
+# SECURITY REPORT
+Critical Issues: (details or None)
+Medium Issues: (details or None)
+Low Issues: (details or None)
+
+# TEST RESULTS
+Passed: (details or None)
+Failed: (details or None)
+
+# CODE QUALITY SCORE
+Performance: X/10
+Security: Y/10
+Maintainability: Z/10
+
+FINAL STATUS: APPROVED or NEEDS FIXES`;
+
+    let history = [
+      { role: 'system', content: SECURITY_SYSTEM_PROMPT },
+      { role: 'user', content: userGoal }
+    ];
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: history,
+          systemPrompt: SECURITY_SYSTEM_PROMPT,
+          customApiKey: settings.apiKey,
+          model: settings.aiModel
+        })
+      });
+
+      if (!response.ok) throw new Error('Security check failed');
+
+      let accumulated = '';
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            const clean = line.trim();
+            if (clean.startsWith('data:')) {
+              const data = clean.slice(5).trim();
+              if (data === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.text) {
+                  accumulated += parsed.text;
+                  updateLastChatMessage(parsed.text, true);
+                }
+              } catch {}
+            }
+          }
+        }
+      }
+      updateLastChatMessage('', false);
+
+      const perfMatch = accumulated.match(/Performance:\s*(\d+)\/10/);
+      const secMatch = accumulated.match(/Security:\s*(\d+)\/10/);
+      const maintMatch = accumulated.match(/Maintainability:\s*(\d+)\/10/);
+      const statusMatch = accumulated.match(/FINAL STATUS:\s*(APPROVED|NEEDS FIXES)/);
+
+      const performance = perfMatch ? parseInt(perfMatch[1]) : 8;
+      const security = secMatch ? parseInt(secMatch[1]) : 9;
+      const maintainability = maintMatch ? parseInt(maintMatch[1]) : 8;
+      const status = statusMatch ? statusMatch[1] as 'APPROVED' | 'NEEDS FIXES' : 'APPROVED';
+
+      setSecurityReport({
+        performance,
+        security,
+        maintainability,
+        status,
+        content: accumulated.split('# SECURITY REPORT').pop() || accumulated
+      });
+
+      setAgentProgress(100);
+      setAgentPhase('completed');
+      setActiveAgent(null);
+      setCurrentActivity(null);
+      setAiGenerating(false);
+
+    } catch (e: any) {
+      updateLastChatMessage(`⚠️ Security QA Error: ${e.message}`, false);
       setAiGenerating(false);
       setAgentPhase('failed');
     }
@@ -881,6 +1159,51 @@ FINAL STATUS: APPROVED or NEEDS FIXES`;
             <Zap className="w-2.5 h-2.5" />
             Agent Team
           </button>
+
+          {isAgentMode && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowAgentPicker(p => !p)}
+                className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] text-zinc-300 hover:text-white transition-all cursor-pointer font-medium"
+              >
+                <span>{selectedAgentMode === 'team' ? 'Pipeline' :
+                       selectedAgentMode === 'architect' ? 'Architect' :
+                       selectedAgentMode === 'developer' ? 'Developer' : 'Security'}</span>
+                <ChevronDown className="w-2.5 h-2.5" />
+              </button>
+              {showAgentPicker && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="absolute left-0 mt-1.5 z-50 bg-[#17171b] border border-white/10 rounded-xl shadow-2xl p-1.5 min-w-[140px]"
+                >
+                  {[
+                    { id: 'team', label: 'Pipeline (Auto)' },
+                    { id: 'architect', label: 'Architect' },
+                    { id: 'developer', label: 'Developer' },
+                    { id: 'security', label: 'Security & QA' }
+                  ].map(mode => (
+                    <button
+                      type="button"
+                      key={mode.id}
+                      onClick={() => {
+                        setSelectedAgentMode(mode.id as any);
+                        setShowAgentPicker(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-colors ${
+                        selectedAgentMode === mode.id
+                          ? 'bg-violet-600/20 text-violet-300'
+                          : 'hover:bg-white/5 text-zinc-300 hover:text-white font-medium'
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -934,7 +1257,7 @@ FINAL STATUS: APPROVED or NEEDS FIXES`;
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 scroll-smooth">
+      <div className="flex-1 overflow-y-auto px-5 py-4.5 flex flex-col gap-5.5 scroll-smooth">
         {chatMessages.length === 0 ? (
           <EmptyState isAgentMode={isAgentMode} />
         ) : (
@@ -1355,7 +1678,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           {msg.content}
         </div>
       ) : (
-        <div className="text-[12.5px] w-full text-zinc-200 leading-relaxed pr-2 select-text">
+        <div className="text-[12.5px] w-full text-zinc-200 leading-relaxed px-5 py-4 bg-[#16161a]/30 rounded-[22px] border border-white/[0.03] select-text shadow-sm relative overflow-hidden">
           <MarkdownRenderer content={msg.content} onApplyCode={handleApply} />
           {msg.isStreaming && (
             <span className="inline-block w-1.5 h-4 bg-violet-400 rounded-sm animate-pulse ml-1 align-middle" />
