@@ -40,6 +40,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  agent?: 'architect' | 'developer' | 'security' | null;
 }
 
 export interface ChatSession {

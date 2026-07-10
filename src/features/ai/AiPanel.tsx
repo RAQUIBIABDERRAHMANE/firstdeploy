@@ -6,7 +6,7 @@ import {
   Sparkles, Send, Trash2, StopCircle, RefreshCw,
   Eye, FileCode, Terminal, FileEdit, ClipboardList, Paperclip,
   History, Plus, ChevronDown, ChevronRight, Zap, AlertCircle,
-  GitCompare, FileSearch, CheckCircle2, XCircle, Loader2
+  GitCompare, FileSearch, CheckCircle2, XCircle, Loader2, ShieldCheck
 } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { ChatMessage, AiAgentTask } from '../../types';
@@ -217,7 +217,11 @@ export default function AiPanel() {
       role: 'assistant',
       content: '',
       timestamp: new Date(),
-      isStreaming: true
+      isStreaming: true,
+      agent: isAgentMode
+        ? (selectedAgentMode === 'developer' ? 'developer' :
+           selectedAgentMode === 'security' ? 'security' : 'architect')
+        : null
     });
     setAiGenerating(true);
 
@@ -421,13 +425,13 @@ WAITING FOR USER APPROVAL${memoryContext}`;
         history.push({ role: 'user', content: results.join('\n\n') });
 
         // Generate final plan
-        addChatMessage({ id: Math.random().toString(), role: 'assistant', content: '', timestamp: new Date(), isStreaming: true });
+        addChatMessage({ id: Math.random().toString(), role: 'assistant', content: '', timestamp: new Date(), isStreaming: true, agent: 'architect' });
         // Recurse to let architect finish plan
         runArchitectWorkflow(userGoal, assistantMsgId);
         return;
       }
 
-      const hasApprovalLine = accumulated.includes('WAITING FOR USER APPROVAL');
+      const hasApprovalLine = accumulated.includes('WAITING FOR USER APPROVAL') && accumulated.toLowerCase().includes('# project analysis');
       if (hasApprovalLine && selectedAgentMode !== 'architect') {
         setProposedPlan(accumulated);
         setAgentPhase('approval_required');
@@ -491,7 +495,7 @@ Rules:
         setAgentProgress(Math.min(25 + loop * 5, 95));
 
         const devMsgId = Math.random().toString();
-        addChatMessage({ id: devMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true });
+        addChatMessage({ id: devMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true, agent: 'developer' });
 
         try {
           const response = await fetch('/api/ai/chat', {
@@ -759,7 +763,7 @@ Rules:
 
         // Prepare new chat bubble for Developer
         const devMsgId = Math.random().toString();
-        addChatMessage({ id: devMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true });
+        addChatMessage({ id: devMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true, agent: 'developer' });
 
         try {
           const response = await fetch('/api/ai/chat', {
@@ -891,7 +895,7 @@ Rules:
     setAgentProgress(90);
 
     const securityMsgId = Math.random().toString();
-    addChatMessage({ id: securityMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true });
+    addChatMessage({ id: securityMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true, agent: 'security' });
 
     const SECURITY_SYSTEM_PROMPT = `You are a Senior Security & QA Engineer. Your role is to inspect all implemented code modifications from the developer.
 Review code quality, error handling, performance issues, and search for standard backend/frontend security vulnerabilities (SQLi, XSS, exposed variables, open permissions).
@@ -1671,18 +1675,61 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
-      className={`flex flex-col ${isUser ? 'items-end self-end max-w-[85%]' : 'items-start self-start w-full'}`}
+      className={`flex flex-col gap-1 w-full ${isUser ? 'items-end self-end max-w-[85%]' : 'items-start self-start'}`}
     >
       {isUser ? (
         <div className="rounded-[22px] px-4.5 py-2.5 text-[12.5px] bg-[#242429] border border-white/[0.05] text-zinc-100 whitespace-pre-wrap leading-relaxed select-text shadow-sm">
           {msg.content}
         </div>
       ) : (
-        <div className="text-[12.5px] w-full text-zinc-200 leading-relaxed px-5 py-4 bg-[#16161a]/30 rounded-[22px] border border-white/[0.03] select-text shadow-sm relative overflow-hidden">
-          <MarkdownRenderer content={msg.content} onApplyCode={handleApply} />
-          {msg.isStreaming && (
-            <span className="inline-block w-1.5 h-4 bg-violet-400 rounded-sm animate-pulse ml-1 align-middle" />
-          )}
+        <div className={`text-[12.5px] w-full text-zinc-200 leading-relaxed px-5 py-4 bg-[#16161c] rounded-[22px] border border-white/[0.04] select-text shadow-md relative overflow-hidden flex flex-col gap-2.5 ${
+          msg.agent === 'architect' ? 'border-l-[3.5px] border-l-violet-500' :
+          msg.agent === 'developer' ? 'border-l-[3.5px] border-l-blue-500' :
+          msg.agent === 'security' ? 'border-l-[3.5px] border-l-emerald-500' :
+          'border-l-[3.5px] border-l-zinc-600'
+        }`}>
+          {/* Agent Header Badge */}
+          <div className="flex items-center gap-1.5 pb-1.5 select-none border-b border-white/[0.03] mb-0.5">
+            {msg.agent === 'architect' ? (
+              <>
+                <div className="w-4.5 h-4.5 rounded bg-violet-600/10 border border-violet-500/20 flex items-center justify-center">
+                  <Sparkles className="w-2.5 h-2.5 text-violet-400" />
+                </div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-300">Architect Agent</span>
+              </>
+            ) : msg.agent === 'developer' ? (
+              <>
+                <div className="w-4.5 h-4.5 rounded bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
+                  <Terminal className="w-2.5 h-2.5 text-blue-400" />
+                </div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-300">Developer Agent</span>
+              </>
+            ) : msg.agent === 'security' ? (
+              <>
+                <div className="w-4.5 h-4.5 rounded bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center">
+                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
+                </div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">Security & QA Agent</span>
+              </>
+            ) : (
+              <>
+                <div className="w-4.5 h-4.5 rounded bg-zinc-600/10 border border-zinc-500/20 flex items-center justify-center">
+                  <Sparkles className="w-2.5 h-2.5 text-zinc-400" />
+                </div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-400">AI Assistant</span>
+              </>
+            )}
+            <span className="text-[9px] text-zinc-600 font-mono ml-auto">
+              {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+            </span>
+          </div>
+
+          <div className="w-full">
+            <MarkdownRenderer content={msg.content} onApplyCode={handleApply} />
+            {msg.isStreaming && (
+              <span className="inline-block w-1.5 h-4 bg-violet-400 rounded-sm animate-pulse ml-1 align-middle" />
+            )}
+          </div>
         </div>
       )}
     </motion.div>
