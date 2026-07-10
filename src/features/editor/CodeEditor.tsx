@@ -1,59 +1,66 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import MonacoEditor, { loader } from '@monaco-editor/react';
-import { 
-  X, 
-  File, 
-  ChevronRight, 
-  Save, 
-  Sparkles, 
-  Terminal,
-  AlertCircle
-} from 'lucide-react';
+import MonacoEditor from '@monaco-editor/react';
+import { X, File, ChevronRight, Save, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
 import { useEditorStore } from '../../stores/editorStore';
 import { useFileContent, useSaveFile } from '../../hooks/useWorkspace';
 import InlineAiToolbar from './InlineAiToolbar';
+import InlinePromptBar from './InlinePromptBar';
+import { useInlineCompletion } from '../../hooks/useInlineCompletion';
+
+const LANGUAGE_MAP: Record<string, string> = {
+  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+  json: 'json', html: 'html', css: 'css', scss: 'css', sass: 'css',
+  md: 'markdown', mdx: 'markdown', py: 'python', go: 'go', rs: 'rust',
+  yaml: 'yaml', yml: 'yaml', dockerfile: 'dockerfile', sh: 'shell', bash: 'shell',
+  sql: 'sql', toml: 'ini', prisma: 'prisma', graphql: 'graphql',
+  svelte: 'html', vue: 'html', php: 'php', rb: 'ruby', tf: 'hcl',
+  env: 'ini', lock: 'ini', xml: 'xml', c: 'c', cpp: 'cpp', cs: 'csharp',
+  java: 'java', kt: 'kotlin', swift: 'swift',
+};
 
 export default function CodeEditor() {
-  const { 
-    activeFile, 
-    openTabs, 
-    closeTab, 
-    setActiveFile, 
-    unsavedFiles, 
-    setFileUnsaved,
-    settings 
+  const {
+    activeFile, openTabs, closeTab, setActiveFile, unsavedFiles, setFileUnsaved,
+    settings, setActiveFileContent
   } = useEditorStore();
 
   const [editorValue, setEditorValue] = useState('');
   const [selectionText, setSelectionText] = useState('');
   const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
-  
-  const editorRef = useRef<any>(null);
-  const saveTimer = useRef<NodeJS.Timeout | null>(null);
+  const [inlinePromptOpen, setInlinePromptOpen] = useState(false);
+  const [inlinePromptPos, setInlinePromptPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Queries
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+  const saveTimer = useRef<NodeJS.Timeout | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const { data: fileData, isLoading, error, refetch } = useFileContent(activeFile);
   const saveMutation = useSaveFile();
 
-  // Load file content when activeFile changes
+  // Wire up inline completions
+  useInlineCompletion(editorRef, monacoRef);
+
   useEffect(() => {
     if (fileData) {
       setEditorValue(fileData.content);
-      // Remove unsaved flag when loading a new file
-      if (activeFile) {
-        setFileUnsaved(activeFile, false);
-      }
+      setActiveFileContent(fileData.content);
+      if (activeFile) setFileUnsaved(activeFile, false);
     }
-  }, [fileData, activeFile, setFileUnsaved]);
+  }, [fileData, activeFile]);
 
-  // Handle Ctrl+S keyboard shortcuts
+  // Ctrl+S save, Ctrl+K inline prompt
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         triggerManualSave();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        openInlinePrompt();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -63,158 +70,157 @@ export default function CodeEditor() {
   const triggerManualSave = () => {
     if (!activeFile) return;
     saveMutation.mutate({ path: activeFile, content: editorValue }, {
-      onSuccess: () => {
-        setFileUnsaved(activeFile, false);
-      }
+      onSuccess: () => setFileUnsaved(activeFile, false)
     });
+  };
+
+  const openInlinePrompt = () => {
+    if (!editorRef.current || !containerRef.current) return;
+    const editor = editorRef.current;
+    const position = editor.getPosition();
+    if (!position) return;
+    const coords = editor.getScrolledVisiblePosition(position);
+    if (!coords) return;
+    const editorEl = editor.getDomNode();
+    const editorRect = editorEl.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
+    setInlinePromptPos({
+      top: editorRect.top - containerRect.top + coords.top + 24,
+      left: Math.min(editorRect.left - containerRect.left + coords.left, containerRect.width - 400)
+    });
+    setInlinePromptOpen(true);
   };
 
   const handleEditorChange = (value: string | undefined) => {
     const nextVal = value || '';
     setEditorValue(nextVal);
-
+    setActiveFileContent(nextVal);
     if (!activeFile) return;
     setFileUnsaved(activeFile, true);
-
-    // Autosave functionality (1 second debounce)
     if (settings.autosave) {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         saveMutation.mutate({ path: activeFile, content: nextVal }, {
-          onSuccess: () => {
-            setFileUnsaved(activeFile, false);
-          }
+          onSuccess: () => setFileUnsaved(activeFile, false)
         });
-      }, 1000);
+      }, 1200);
     }
   };
 
-  // Setup custom theme during editor instantiation
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
 
     monaco.editor.defineTheme('ide-dark', {
       base: 'vs-dark',
       inherit: true,
       rules: [
-        { token: 'comment', foreground: 'A1A1AA', fontStyle: 'italic' },
-        { token: 'keyword', foreground: 'C084FC', fontStyle: 'bold' }, // Purple
-        { token: 'string', foreground: '34D399' }, // Emerald
-        { token: 'number', foreground: 'FBBF24' } // Yellow
+        { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
+        { token: 'keyword', foreground: 'c084fc', fontStyle: 'bold' },
+        { token: 'string', foreground: '34d399' },
+        { token: 'number', foreground: 'fbbf24' },
+        { token: 'type', foreground: '60a5fa' },
+        { token: 'function', foreground: 'a78bfa' },
+        { token: 'variable', foreground: 'e2e8f0' },
       ],
       colors: {
         'editor.background': '#111113',
-        'editor.foreground': '#FFFFFF',
-        'editorLineNumber.foreground': '#A1A1AA40',
-        'editorLineNumber.activeForeground': '#8B5CF6',
-        'editor.lineHighlightBackground': '#FFFFFF05',
-        'editor.selectionBackground': '#8B5CF625',
-        'editorCursor.foreground': '#8B5CF6',
-        'editorBracketMatch.background': '#8B5CF625',
-        'editorBracketMatch.border': '#8B5CF640'
+        'editor.foreground': '#e4e4e7',
+        'editorLineNumber.foreground': '#3f3f46',
+        'editorLineNumber.activeForeground': '#8b5cf6',
+        'editor.lineHighlightBackground': '#ffffff04',
+        'editor.selectionBackground': '#8b5cf620',
+        'editorCursor.foreground': '#8b5cf6',
+        'editorBracketMatch.background': '#8b5cf620',
+        'editorBracketMatch.border': '#8b5cf650',
+        'editorInlayHint.background': '#8b5cf610',
+        'editorInlayHint.foreground': '#8b5cf680',
+        'editor.findMatchBackground': '#f59e0b30',
+        'editor.findMatchHighlightBackground': '#f59e0b20',
+        'editorWidget.background': '#17171b',
+        'editorWidget.border': '#ffffff10',
+        'editorSuggestWidget.background': '#17171b',
+        'editorSuggestWidget.border': '#ffffff10',
+        'editorSuggestWidget.selectedBackground': '#8b5cf620',
+        'input.background': '#0f0f12',
+        'input.border': '#ffffff10',
+        'scrollbarSlider.background': '#ffffff10',
+        'scrollbarSlider.hoverBackground': '#8b5cf630',
+        'scrollbarSlider.activeBackground': '#8b5cf650',
       }
     });
 
     monaco.editor.setTheme('ide-dark');
 
-    // Attach selection listener
-    editor.onDidChangeCursorSelection((e: any) => {
+    // Selection listener for floating AI toolbar
+    editor.onDidChangeCursorSelection(() => {
       const selection = editor.getSelection();
-      const text = editor.getModel().getValueInRange(selection);
-      
+      const text = editor.getModel()?.getValueInRange(selection) || '';
       if (text.trim().length > 0) {
         setSelectionText(text);
-        
-        // Find screen coordinates for floating bubble positioning
         const endPos = selection.getEndPosition();
         const coords = editor.getScrolledVisiblePosition(endPos);
-        
         if (coords) {
-          const editorElement = editor.getDomNode();
-          const rect = editorElement.getBoundingClientRect();
-          
-          setToolbarPos({
-            x: rect.left + coords.left + 20,
-            y: rect.top + coords.top - 60
-          });
+          const rect = editor.getDomNode().getBoundingClientRect();
+          setToolbarPos({ x: rect.left + coords.left + 20, y: rect.top + coords.top - 60 });
         }
       } else {
         setToolbarPos(null);
       }
     });
+
+    // Inline completion config
+    editor.updateOptions({
+      inlineSuggest: { enabled: settings.inlineCompletionsEnabled },
+      suggest: { showInlineDetails: true },
+    });
   };
 
-  // Determine monaco language mode by extension
   const getEditorLanguage = (filePath: string) => {
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    const mapping: Record<string, string> = {
-      ts: 'typescript',
-      tsx: 'typescript',
-      js: 'javascript',
-      jsx: 'javascript',
-      json: 'json',
-      html: 'html',
-      css: 'css',
-      md: 'markdown',
-      py: 'python',
-      go: 'go',
-      rs: 'rust',
-      yaml: 'yaml',
-      yml: 'yaml',
-      dockerfile: 'dockerfile',
-      sh: 'shell'
-    };
-    return mapping[ext || ''] || 'plaintext';
+    const ext = filePath.split('.').pop()?.toLowerCase() || '';
+    const base = filePath.split('/').pop()?.toLowerCase() || '';
+    if (base === 'dockerfile') return 'dockerfile';
+    if (base === '.env' || base.startsWith('.env')) return 'ini';
+    return LANGUAGE_MAP[ext] || 'plaintext';
   };
 
-  // Generate breadcrumb layout paths
   const getBreadcrumbs = () => {
     if (!activeFile) return [];
-    // Convert D:\... or /home/... to clean splits
-    const clean = activeFile.replace(/\\/g, '/');
-    return clean.split('/');
+    return activeFile.replace(/\\/g, '/').split('/').filter(Boolean);
   };
 
-  const activeFileName = activeFile 
-    ? activeFile.split('/').pop() || activeFile.split('\\').pop() || 'Untitled' 
-    : '';
-
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#111113] overflow-hidden select-none">
-      
-      {/* Editor Tabs list */}
-      <div className="h-9 w-full bg-[#09090B] border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between overflow-x-auto select-none shrink-0 pr-4">
+    <div ref={containerRef} className="flex-1 flex flex-col h-full bg-[#111113] overflow-hidden relative">
+
+      {/* Tab bar */}
+      <div className="h-9 w-full bg-[#09090b] border-b border-white/[0.05] flex items-center justify-between overflow-x-auto shrink-0 pr-4">
         <div className="flex items-center h-full">
           {openTabs.map((tabPath) => {
             const isActive = activeFile === tabPath;
             const tabName = tabPath.split('/').pop() || tabPath.split('\\').pop() || 'Untitled';
             const isUnsaved = unsavedFiles.has(tabPath);
+            const lang = getEditorLanguage(tabPath);
 
             return (
               <div
                 key={tabPath}
                 onClick={() => setActiveFile(tabPath)}
-                className={`group h-full flex items-center gap-2 px-4 cursor-pointer text-[12px] border-r border-[rgba(255,255,255,0.04)] transition-all ${
-                  isActive 
-                    ? 'bg-[#111113] text-white border-t-2 border-t-[#8B5CF6]' 
-                    : 'bg-[#09090B] text-[#A1A1AA] hover:text-white hover:bg-[#111113]/30'
+                className={`group h-full flex items-center gap-2 px-4 cursor-pointer text-[12px] border-r border-white/[0.03] transition-all shrink-0 ${
+                  isActive
+                    ? 'bg-[#111113] text-white border-t-[1.5px] border-t-violet-500'
+                    : 'bg-[#09090b] text-zinc-500 hover:text-zinc-200 hover:bg-[#111113]/40'
                 }`}
               >
-                <File className="w-3.5 h-3.5 text-zinc-500" />
-                <span>{tabName}</span>
-                
-                {/* Unsaved indicator dot / close button */}
-                <div className="w-4 h-4 flex items-center justify-center relative">
-                  {isUnsaved ? (
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6] group-hover:hidden shadow-[0_0_8px_rgba(139,92,246,0.6)]" />
-                  ) : null}
+                <File className="w-3 h-3 text-zinc-600 shrink-0" />
+                <span className="max-w-[120px] truncate">{tabName}</span>
+                <div className="w-4 h-4 flex items-center justify-center relative shrink-0">
+                  {isUnsaved && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-violet-400 group-hover:hidden shadow-[0_0_6px_rgba(139,92,246,0.8)]" />
+                  )}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(tabPath);
-                    }}
-                    className={`p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-white ${
-                      isUnsaved ? 'hidden group-hover:block' : 'opacity-0 group-hover:opacity-100'
+                    onClick={(e) => { e.stopPropagation(); closeTab(tabPath); }}
+                    className={`p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition-colors ${
+                      isUnsaved ? 'hidden group-hover:flex' : 'opacity-0 group-hover:opacity-100'
                     }`}
                   >
                     <X className="w-3 h-3" />
@@ -225,55 +231,40 @@ export default function CodeEditor() {
           })}
         </div>
 
-        {/* Sync manual save indicator */}
         {activeFile && unsavedFiles.has(activeFile) && (
-          <button 
+          <button
             onClick={triggerManualSave}
-            className="flex items-center gap-1 text-[11px] text-[#8B5CF6] hover:text-white border border-[#8B5CF6]/20 bg-[#8B5CF6]/5 rounded px-2 py-0.5 cursor-pointer"
+            className="shrink-0 flex items-center gap-1 text-[11px] text-violet-400 hover:text-white border border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10 rounded px-2 py-0.5 cursor-pointer transition-all"
           >
             <Save className="w-3 h-3" />
-            <span>Save pending</span>
+            Save
           </button>
         )}
       </div>
 
-      {/* Breadcrumbs pathway bar */}
+      {/* Breadcrumbs */}
       {activeFile && (
-        <div className="h-7 w-full border-b border-[rgba(255,255,255,0.03)] bg-[#111113]/40 flex items-center gap-1.5 px-4 text-[11px] text-[#A1A1AA] shrink-0 font-medium select-none">
+        <div className="h-7 border-b border-white/[0.03] bg-[#0f0f12]/60 flex items-center gap-1 px-4 text-[11px] text-zinc-600 shrink-0 overflow-x-auto">
           {getBreadcrumbs().map((crumb, idx, arr) => (
             <React.Fragment key={idx}>
-              <span className={idx === arr.length - 1 ? 'text-white' : 'hover:text-white cursor-pointer'}>
+              <span className={idx === arr.length - 1 ? 'text-zinc-300 font-medium' : 'hover:text-zinc-300 cursor-pointer transition-colors'}>
                 {crumb}
               </span>
-              {idx < arr.length - 1 && <ChevronRight className="w-3 h-3 text-[#A1A1AA]/40" />}
+              {idx < arr.length - 1 && <ChevronRight className="w-3 h-3 text-zinc-700 shrink-0" />}
             </React.Fragment>
           ))}
+          <span className="ml-auto text-[10px] text-zinc-700 font-mono shrink-0">Ctrl+K to edit with AI</span>
         </div>
       )}
 
-      {/* Main Monaco Workspace */}
+      {/* Monaco editor area */}
       <div className="flex-1 w-full bg-[#111113] relative select-text">
         {!activeFile ? (
-          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-[#A1A1AA]">
-            <Sparkles className="w-12 h-12 text-violet-500/30 mb-3 animate-pulse" />
-            <h2 className="text-[14px] font-bold text-white mb-1">FirstDeploy AI Code Editor</h2>
-            <p className="text-[12px] text-zinc-500 max-w-[320px]">
-              Select a file from the Explorer or search queries in the workspace to begin coding.
-            </p>
-          </div>
+          <WelcomeScreen />
         ) : isLoading ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-            <RefreshCw className="w-6 h-6 text-violet-500 animate-spin" />
-            <span className="text-[12.5px] text-[#A1A1AA]">Loading {activeFileName}...</span>
-          </div>
+          <LoadingScreen name={activeFile.split('/').pop() || ''} />
         ) : error ? (
-          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-rose-400 text-center gap-2">
-            <AlertCircle className="w-8 h-8" />
-            <span className="text-[13px] font-semibold">Failed to read file contents.</span>
-            <button onClick={() => refetch()} className="px-3 py-1 bg-white/5 border border-white/5 hover:bg-white/10 rounded-lg text-white text-[12px] transition-colors mt-2">
-              Retry
-            </button>
-          </div>
+          <ErrorScreen onRetry={refetch} />
         ) : (
           <MonacoEditor
             height="100%"
@@ -289,65 +280,89 @@ export default function CodeEditor() {
               minimap: { enabled: settings.minimap },
               bracketPairColorization: { enabled: true },
               stickyScroll: { enabled: true },
-              fontFamily: 'JetBrains Mono, Fira Code, ui-monospace, monospace',
-              lineHeight: 20,
-              padding: { top: 10, bottom: 10 },
+              fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, monospace',
+              fontLigatures: true,
+              lineHeight: 22,
+              padding: { top: 14, bottom: 14 },
               cursorBlinking: 'smooth',
               cursorSmoothCaretAnimation: 'on',
               smoothScrolling: true,
               automaticLayout: true,
-              glyphMargin: false,
+              glyphMargin: true,
               folding: true,
               renderLineHighlight: 'all',
+              lineNumbersMinChars: 4,
+              inlineSuggest: { enabled: settings.inlineCompletionsEnabled },
               scrollbar: {
-                verticalScrollbarSize: 8,
-                horizontalScrollbarSize: 8,
+                verticalScrollbarSize: 6,
+                horizontalScrollbarSize: 6,
                 verticalHasArrows: false,
-                horizontalHasArrows: false
-              }
+                horizontalHasArrows: false,
+              },
+              overviewRulerBorder: false,
+              hideCursorInOverviewRuler: true,
+              renderLineHighlightOnlyWhenFocus: false,
             }}
-            loading={
-              <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-                <RefreshCw className="w-6 h-6 text-violet-500 animate-spin" />
-                <span className="text-[12px] text-[#A1A1AA]">Loading editor core...</span>
-              </div>
-            }
+            loading={<LoadingScreen name="editor core" />}
           />
         )}
 
-        {/* Floating selection Copilot toolbar */}
+        {/* Floating selection toolbar */}
         {toolbarPos && (
           <InlineAiToolbar
             selectionText={selectionText}
             position={toolbarPos}
             onClose={() => setToolbarPos(null)}
+            editorRef={editorRef}
           />
         )}
-      </div>
 
+        {/* Ctrl+K Inline prompt bar */}
+        <InlinePromptBar
+          editorRef={editorRef}
+          isOpen={inlinePromptOpen}
+          onClose={() => setInlinePromptOpen(false)}
+          position={inlinePromptPos}
+        />
+      </div>
     </div>
   );
 }
 
-// Inline loading spinner helper
-function RefreshCw(props: React.SVGProps<SVGSVGElement>) {
+function WelcomeScreen() {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-      <path d="M3 3v5h5" />
-      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-      <path d="M16 16h5v5" />
-    </svg>
+    <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center select-none">
+      <div className="w-16 h-16 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center mb-5">
+        <Sparkles className="w-8 h-8 text-violet-400/60" />
+      </div>
+      <h2 className="text-[15px] font-bold text-white mb-2">FirstDeploy AI Editor</h2>
+      <p className="text-[12.5px] text-zinc-600 max-w-[280px] leading-relaxed">
+        Open a file from the explorer to start editing. Press <kbd className="px-1 py-0.5 rounded bg-white/5 text-zinc-400 text-[11px]">Ctrl+K</kbd> to edit with AI.
+      </p>
+    </div>
+  );
+}
+
+function LoadingScreen({ name }: { name: string }) {
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+      <Loader2 className="w-5 h-5 text-violet-500 animate-spin" />
+      <span className="text-[12px] text-zinc-600">Loading {name}…</span>
+    </div>
+  );
+}
+
+function ErrorScreen({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center p-8 text-rose-400 text-center gap-3">
+      <AlertCircle className="w-8 h-8" />
+      <span className="text-[13px] font-semibold">Failed to read file</span>
+      <button
+        onClick={onRetry}
+        className="px-4 py-1.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-white text-[12px] transition-colors"
+      >
+        Retry
+      </button>
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { FileNode, TerminalTab, ChatMessage, AiAgentTask, EditorSettings } from '../types';
+import { FileNode, TerminalTab, ChatMessage, AiAgentTask, EditorSettings, ChatSession, DiffPreview } from '../types';
 
 interface EditorState {
   // Workspace Path
@@ -71,10 +71,29 @@ interface EditorState {
   addAgentTask: (task: AiAgentTask) => void;
   updateAgentTaskStatus: (id: string, status: AiAgentTask['status'], output?: string) => void;
   clearAgentTasks: () => void;
+
+  // Chat Sessions (persistent history)
+  chatSessions: ChatSession[];
+  activeChatSessionId: string | null;
+  saveCurrentSession: (title?: string) => void;
+  loadSession: (sessionId: string) => void;
+  deleteSession: (sessionId: string) => void;
+
+  // Diff Preview state
+  diffPreview: DiffPreview | null;
+  setDiffPreview: (diff: DiffPreview | null) => void;
+
+  // Inline completion ghost text
+  inlineCompletionText: string | null;
+  setInlineCompletionText: (text: string | null) => void;
   
   // Git
   gitBranch: string;
   setGitBranch: (branch: string) => void;
+
+  // Active file content cache (for context injection)
+  activeFileContent: string;
+  setActiveFileContent: (content: string) => void;
 }
 
 const DEFAULT_SETTINGS: EditorSettings = {
@@ -86,10 +105,35 @@ const DEFAULT_SETTINGS: EditorSettings = {
   autosave: true,
   aiModel: 'llama-3.3-70b-versatile',
   systemPrompt: 'You are an advanced software engineering assistant integrated directly into a web IDE. Write clean, production-ready code.',
-  apiKey: ''
+  apiKey: '',
+  inlineCompletionsEnabled: true,
+  contextInjectionEnabled: false,
 };
 
-export const useEditorStore = create<EditorState>((set) => ({
+const SESSIONS_KEY = 'firstdeploy_chat_sessions';
+
+function loadSessionsFromStorage(): ChatSession[] {
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return parsed.map((s: any) => ({
+      ...s,
+      updatedAt: new Date(s.updatedAt),
+      messages: s.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveSessionsToStorage(sessions: ChatSession[]) {
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  } catch {}
+}
+
+export const useEditorStore = create<EditorState>((set, get) => ({
   workspacePath: null,
   setWorkspacePath: (path) => set({ workspacePath: path }),
   
@@ -162,8 +206,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   setSidebarWidth: (width) => set({ sidebarWidth: Math.max(180, Math.min(width, 500)) }),
   bottomHeight: 280,
   setBottomHeight: (height) => set({ bottomHeight: Math.max(150, Math.min(height, 600)) }),
-  aiPanelWidth: 320,
-  setAiPanelWidth: (width) => set({ aiPanelWidth: Math.max(240, Math.min(width, 600)) }),
+  aiPanelWidth: 340,
+  setAiPanelWidth: (width) => set({ aiPanelWidth: Math.max(280, Math.min(width, 680)) }),
   
   terminalTabs: [],
   activeTerminalId: null,
@@ -213,7 +257,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     };
     return { chatMessages: nextMsg };
   }),
-  clearChat: () => set({ chatMessages: [] }),
+  clearChat: () => set({ chatMessages: [], agentTasks: [] }),
   
   agentTasks: [],
   addAgentTask: (task) => set((state) => ({
@@ -225,7 +269,57 @@ export const useEditorStore = create<EditorState>((set) => ({
     )
   })),
   clearAgentTasks: () => set({ agentTasks: [] }),
+
+  // Chat Sessions
+  chatSessions: [],
+  activeChatSessionId: null,
+  saveCurrentSession: (title) => set((state) => {
+    if (state.chatMessages.length === 0) return {};
+    const existing = state.chatSessions.find(s => s.id === state.activeChatSessionId);
+    const sessionTitle = title || (state.chatMessages[0]?.content?.slice(0, 40) + '…') || 'Chat';
+    if (existing) {
+      const updated = state.chatSessions.map(s => s.id === existing.id 
+        ? { ...s, messages: state.chatMessages, updatedAt: new Date(), title: title || s.title }
+        : s
+      );
+      saveSessionsToStorage(updated);
+      return { chatSessions: updated };
+    }
+    const newSession: ChatSession = {
+      id: Date.now().toString(),
+      title: sessionTitle,
+      messages: state.chatMessages,
+      updatedAt: new Date()
+    };
+    const next = [newSession, ...state.chatSessions].slice(0, 30);
+    saveSessionsToStorage(next);
+    return { chatSessions: next, activeChatSessionId: newSession.id };
+  }),
+  loadSession: (sessionId) => set((state) => {
+    const session = state.chatSessions.find(s => s.id === sessionId);
+    if (!session) return {};
+    return { chatMessages: session.messages, activeChatSessionId: sessionId, agentTasks: [] };
+  }),
+  deleteSession: (sessionId) => set((state) => {
+    const next = state.chatSessions.filter(s => s.id !== sessionId);
+    saveSessionsToStorage(next);
+    return { 
+      chatSessions: next,
+      activeChatSessionId: state.activeChatSessionId === sessionId ? null : state.activeChatSessionId
+    };
+  }),
+
+  // Diff Preview
+  diffPreview: null,
+  setDiffPreview: (diff) => set({ diffPreview: diff }),
+
+  // Inline completion
+  inlineCompletionText: null,
+  setInlineCompletionText: (text) => set({ inlineCompletionText: text }),
   
   gitBranch: 'main',
-  setGitBranch: (branch) => set({ gitBranch: branch })
+  setGitBranch: (branch) => set({ gitBranch: branch }),
+
+  activeFileContent: '',
+  setActiveFileContent: (content) => set({ activeFileContent: content }),
 }));

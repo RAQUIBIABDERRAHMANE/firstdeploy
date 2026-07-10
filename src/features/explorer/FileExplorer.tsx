@@ -477,6 +477,33 @@ export default function FileExplorer() {
               </button>
             )}
             <div className="h-px bg-white/5 my-1" />
+            {!contextMenu.node.isDirectory && (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/workspace/file?path=${encodeURIComponent(contextMenu.node.path)}`);
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const fileName = contextMenu.node.name;
+                    const ext = fileName.split('.').pop() || '';
+                    setContextMenu(null);
+                    // Open AI panel and inject file as a message
+                    useEditorStore.getState().setAiPanelOpen(true);
+                    useEditorStore.getState().addChatMessage({
+                      id: Math.random().toString(),
+                      role: 'user',
+                      content: `Here is the content of **${fileName}** for context:\n\`\`\`${ext}\n${data.content.slice(0, 8000)}\n\`\`\``,
+                      timestamp: new Date()
+                    });
+                  } catch {}
+                }}
+                className="w-full text-left px-2.5 py-1.5 text-[12px] text-violet-300 hover:text-violet-200 hover:bg-violet-500/10 rounded flex items-center gap-2"
+              >
+                <FileCode className="w-3.5 h-3.5" />
+                Send to AI
+              </button>
+            )}
+            <div className="h-px bg-white/5 my-1" />
             <button
               onClick={() => handleDeleteNode(contextMenu.node)}
               className="w-full text-left px-2.5 py-1.5 text-[12px] text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded flex items-center gap-2"
@@ -487,6 +514,7 @@ export default function FileExplorer() {
           </motion.div>
         )}
       </AnimatePresence>
+
 
       {/* Rename Dialog Modal */}
       {renamingNode && (

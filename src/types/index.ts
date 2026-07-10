@@ -42,9 +42,24 @@ export interface ChatMessage {
   isStreaming?: boolean;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  updatedAt: Date;
+}
+
+export interface DiffPreview {
+  file: string;
+  original: string;
+  modified: string;
+  onAccept: () => void;
+  onReject: () => void;
+}
+
 export interface AiAgentTask {
   id: string;
-  type: 'read' | 'write' | 'delete' | 'search' | 'command' | 'plan';
+  type: 'read' | 'write' | 'delete' | 'search' | 'command' | 'plan' | 'diff' | 'diagnostics';
   description: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   output?: string;
@@ -60,4 +75,6 @@ export interface EditorSettings {
   aiModel: string;
   systemPrompt: string;
   apiKey: string;
+  inlineCompletionsEnabled: boolean;
+  contextInjectionEnabled: boolean;
 }

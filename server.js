@@ -478,8 +478,89 @@ app.prepare().then(() => {
     }
   });
 
+  // ── NEW: Fast inline completion endpoint ─────────────────────────────────
+  expressApp.post('/api/ai/complete', async (req, res) => {
+    const { prefix, suffix, language, filePath, customApiKey, model } = req.body;
+    const apiKey = customApiKey || process.env.GROQ_API_KEY;
+
+    if (!apiKey) {
+      return res.json({ completion: '' });
+    }
+
+    try {
+      const systemPrompt = `You are an expert code completion engine. Given a code prefix and optional suffix, return ONLY the next logical code completion — no explanation, no markdown, no code fences. Output exactly the text to insert at the cursor. Keep it concise (1–5 lines max).`;
+      const userMsg = `Language: ${language || 'typescript'}\nFile: ${filePath || ''}\n\n<prefix>\n${prefix}\n</prefix>\n<suffix>\n${suffix || ''}\n</suffix>\n\nComplete the code:`;
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: model || 'llama-3.1-8b-instant',
+          messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
+          stream: false,
+          temperature: 0.1,
+          max_tokens: 256,
+          stop: ['\n\n\n', '```']
+        })
+      });
+
+      if (!response.ok) return res.json({ completion: '' });
+      const data = await response.json();
+      const completion = data.choices?.[0]?.message?.content?.trim() || '';
+      res.json({ completion });
+    } catch (e) {
+      res.json({ completion: '' });
+    }
+  });
+
+  // ── NEW: Workspace diff endpoint ──────────────────────────────────────────
+  expressApp.post('/api/workspace/diff', (req, res) => {
+    const { original, modified } = req.body;
+    if (typeof original !== 'string' || typeof modified !== 'string') {
+      return res.status(400).json({ error: 'original and modified are required' });
+    }
+    const origLines = original.split('\n');
+    const modLines = modified.split('\n');
+    const hunks = [];
+    let i = 0, j = 0;
+    while (i < origLines.length || j < modLines.length) {
+      if (i < origLines.length && j < modLines.length && origLines[i] === modLines[j]) {
+        i++; j++;
+      } else if (j < modLines.length && (i >= origLines.length || origLines[i] !== modLines[j])) {
+        hunks.push({ type: 'added', lineNum: j + 1, content: modLines[j] });
+        j++;
+      } else {
+        hunks.push({ type: 'removed', lineNum: i + 1, content: origLines[i] });
+        i++;
+      }
+    }
+    res.json({ hunks, addedCount: hunks.filter(h => h.type === 'added').length, removedCount: hunks.filter(h => h.type === 'removed').length });
+  });
+
+  // ── NEW: TypeScript diagnostics endpoint ──────────────────────────────────
+  expressApp.get('/api/workspace/diagnostics', (req, res) => {
+    const folder = req.query.folder;
+    if (!folder) return res.status(400).json({ error: 'folder is required' });
+    const resolvedFolder = path.resolve(folder);
+
+    exec('npx tsc --noEmit --pretty false 2>&1', { cwd: resolvedFolder, timeout: 30000 }, (error, stdout, stderr) => {
+      if (!stdout && !stderr) return res.json([]);
+      const output = (stdout + stderr).trim();
+      const lines = output.split('\n');
+      const diagnostics = [];
+      for (const line of lines) {
+        const match = line.match(/^(.+?)\((\d+),(\d+)\):\s+(?:error|warning)\s+TS\d+:\s+(.+)$/);
+        if (match) {
+          diagnostics.push({ file: match[1], line: parseInt(match[2]), column: parseInt(match[3]), message: match[4] });
+        }
+      }
+      res.json(diagnostics);
+    });
+  });
+
   // AI Endpoint (Groq Stream or Local Fallback)
   expressApp.post('/api/ai/chat', async (req, res) => {
+
     const { messages, systemPrompt, customApiKey, model } = req.body;
     
     res.setHeader('Content-Type', 'text/event-stream');
