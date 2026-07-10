@@ -81,6 +81,7 @@ export default function AiPanel() {
   useEffect(() => {
     if (workspacePath) {
       fetchAllFiles(workspacePath).then(setFileTree).catch(() => {});
+      inspectProjectAndInitializeMemory();
     }
   }, [workspacePath]);
 
@@ -107,16 +108,74 @@ export default function AiPanel() {
     }
   };
 
-  const buildSystemPrompt = () => {
+  const buildSystemPrompt = (memoryContext: string) => {
     let base = settings.systemPrompt;
     if (contextFile && activeFileContent) {
       const fileName = contextFile.split('/').pop() || contextFile.split('\\').pop();
       base += `\n\nYou have access to the following active file context:\n\n**File: ${fileName}**\n\`\`\`\n${activeFileContent.slice(0, 8000)}\n\`\`\``;
     }
+    if (memoryContext) {
+      base += `\n\n${memoryContext}`;
+    }
     return base;
   };
 
   // Memory utilities
+  const inspectProjectAndInitializeMemory = async () => {
+    if (!workspacePath) return;
+    const memoryPath = workspacePath + '/.agent_memory.json';
+    const pkgPath = workspacePath + '/package.json';
+
+    let detectedStack = 'Unknown';
+    let hasMemory = false;
+    let existingMem: any = {};
+
+    try {
+      const res = await fetch(`/api/workspace/file?path=${encodeURIComponent(memoryPath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        existingMem = JSON.parse(data.content);
+        hasMemory = true;
+      }
+    } catch {}
+
+    try {
+      const res = await fetch(`/api/workspace/file?path=${encodeURIComponent(pkgPath)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const pkg = JSON.parse(data.content);
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        
+        const stackList = [];
+        if (deps['next']) stackList.push('Next.js');
+        else if (deps['react']) stackList.push('React');
+        if (deps['typescript']) stackList.push('TypeScript');
+        if (deps['tailwindcss']) stackList.push('TailwindCSS');
+        if (deps['express']) stackList.push('Express');
+        if (deps['prisma']) stackList.push('Prisma ORM');
+        if (deps['lucide-react']) stackList.push('Lucide Icons');
+        if (deps['framer-motion']) stackList.push('Framer Motion');
+
+        detectedStack = stackList.join(', ') || 'Node.js project';
+      }
+    } catch {}
+
+    if (!hasMemory || existingMem.stack === 'Unknown' || existingMem.stack === 'Next.js + Monaco Web IDE') {
+      const finalMem = {
+        stack: detectedStack,
+        decisions: existingMem.decisions || 'Initialized multi-agent coding memory',
+        changes: existingMem.changes || ''
+      };
+      try {
+        await fetch('/api/workspace/file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: memoryPath, content: JSON.stringify(finalMem, null, 2) })
+        });
+      } catch {}
+    }
+  };
+
   const loadProjectMemory = async (): Promise<string> => {
     if (!workspacePath) return '';
     try {
@@ -240,13 +299,14 @@ export default function AiPanel() {
 
     // Standard streaming chat
     try {
+      const memoryContext = await loadProjectMemory();
       chatController.current = new AbortController();
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...chatMessages, userMsg],
-          systemPrompt: buildSystemPrompt(),
+          systemPrompt: buildSystemPrompt(memoryContext),
           customApiKey: settings.apiKey,
           model: settings.aiModel
         }),
@@ -331,6 +391,8 @@ export default function AiPanel() {
 You must NEVER write or modify files, run command operations, or perform deletions.
 You CAN read files, search project, or get compile diagnostics if needed.
 
+${memoryContext}
+
 If the user's input is a general conversation, greeting (e.g. "hi", "hello", "hey"), or is too vague to form a concrete technical plan, you MUST NOT output an implementation plan. Instead, greet the user, ask clarifying questions, and request details about the project or their technical needs. In this conversational mode, do NOT write the "WAITING FOR USER APPROVAL" line.
 
 If the request is a concrete technical requirement, construct a detailed Markdown plan:
@@ -344,7 +406,7 @@ Database/API/Dependency changes: (outline)
 Estimated complexity & risks: (summary)
 
 End your response with EXACTLY this line:
-WAITING FOR USER APPROVAL${memoryContext}`;
+WAITING FOR USER APPROVAL`;
 
     let history = [
       { role: 'system', content: ARCHITECT_SYSTEM_PROMPT },
@@ -461,6 +523,8 @@ WAITING FOR USER APPROVAL${memoryContext}`;
     setCurrentActivity('Starting code modifications directly...');
     setAgentProgress(25);
 
+    const memoryContext = await loadProjectMemory();
+
     const DEVELOPER_SYSTEM_PROMPT = `You are a Senior Full-Stack Developer. Your goal is to implement the user's request.
 Read existing files fully before editing, maintain existing code architecture, and implement minimal clean changes.
 
@@ -474,6 +538,8 @@ export const add = (a: number, b: number) => a + b;
 <action type="run_command" command="npm run build"></action>
 <action type="search_project" query="export const"></action>
 <action type="get_diagnostics"></action>
+
+${memoryContext}
 
 Rules:
 - You must write the ENTIRE file content inside the write_file content.
@@ -611,8 +677,12 @@ Rules:
     setCurrentActivity('Security & QA Agent: Performing security audit directly...');
     setAgentProgress(50);
 
+    const memoryContext = await loadProjectMemory();
+
     const SECURITY_SYSTEM_PROMPT = `You are a Senior Security & QA Engineer. Your role is to inspect the codebase context and user's query for security vulnerabilities.
 Review code quality, error handling, performance issues, and search for standard backend/frontend security vulnerabilities.
+
+${memoryContext}
 
 Your response must strictly conclude with this exact visual scorecard:
 
@@ -728,6 +798,8 @@ FINAL STATUS: APPROVED or NEEDS FIXES`;
     setCurrentActivity('Starting code modifications based on approved plan...');
     setAgentProgress(25);
 
+    const memoryContext = await loadProjectMemory();
+
     const DEVELOPER_SYSTEM_PROMPT = `You are a Senior Full-Stack Developer. Your goal is to implement the approved Architect Plan.
 Read existing files fully before editing, maintain existing code architecture, and implement minimal clean changes.
 
@@ -741,6 +813,8 @@ export const add = (a: number, b: number) => a + b;
 <action type="run_command" command="npm run build"></action>
 <action type="search_project" query="export const"></action>
 <action type="get_diagnostics"></action>
+
+${memoryContext}
 
 Rules:
 - You must write the ENTIRE file content inside the write_file content.
@@ -897,9 +971,13 @@ Rules:
     const securityMsgId = Math.random().toString();
     addChatMessage({ id: securityMsgId, role: 'assistant', content: '', timestamp: new Date(), isStreaming: true, agent: 'security' });
 
+    const memoryContext = await loadProjectMemory();
+
     const SECURITY_SYSTEM_PROMPT = `You are a Senior Security & QA Engineer. Your role is to inspect all implemented code modifications from the developer.
 Review code quality, error handling, performance issues, and search for standard backend/frontend security vulnerabilities (SQLi, XSS, exposed variables, open permissions).
 You can run get_diagnostics to audit compile status.
+
+${memoryContext}
 
 Your response must strictly conclude with this exact visual scorecard:
 
@@ -1261,7 +1339,7 @@ FINAL STATUS: APPROVED or NEEDS FIXES`;
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-5 py-4.5 flex flex-col gap-5.5 scroll-smooth">
+      <div className="flex-1 overflow-y-auto px-6 py-4.5 flex flex-col gap-5.5 scroll-smooth">
         {chatMessages.length === 0 ? (
           <EmptyState isAgentMode={isAgentMode} />
         ) : (
@@ -1675,7 +1753,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
-      className={`flex flex-col gap-1 w-full ${isUser ? 'items-end self-end max-w-[85%]' : 'items-start self-start'}`}
+      className={`flex flex-col gap-1 w-full ${isUser ? 'items-end self-end max-w-[86%] mr-1' : 'items-start self-start max-w-[94%] ml-1'}`}
     >
       {isUser ? (
         <div className="rounded-[22px] px-4.5 py-2.5 text-[12.5px] bg-[#242429] border border-white/[0.05] text-zinc-100 whitespace-pre-wrap leading-relaxed select-text shadow-sm">
